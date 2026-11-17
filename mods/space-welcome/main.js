@@ -40,7 +40,8 @@ export default class Welcome extends View {
     });
     if (checking()) return;
     // Once the space has another tab (a row here, + or a key), this page has done its job: it goes.
-    // Never while it's the last tab: that would close the space.
+    // Never while it's the last tab: that would close the space. A loop, not render: a hidden tab
+    // (the new one is shown) doesn't render.
     cx.spawn(async cx => {
       for (;;) {
         await cx.sleep(1000);
