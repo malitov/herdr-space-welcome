@@ -3,8 +3,8 @@
 A welcome page for a space with nothing open. Instead of closing the space with its last tab, you get a
 calm page in a tab named "Welcome": the space's name, its folder and "nothing open yet. What next?",
 then one-click rows to open a terminal, start any installed agent (keys 1–9), make a new space or a
-worktree. A guard copy of the mod in the layout keeps one Welcome tab ready next to a space's only
-tab, and closes it once the space has two tabs again.
+worktree. As soon as the space has another tab, the page closes itself. A guard copy of the mod in the
+layout brings a space back, with only this page, right after its last tab is closed.
 
 ![Space Welcome](preview.png)
 
@@ -34,16 +34,20 @@ top, scrolling if short of room. Text 13px.
   Herdr's shipped `worktree` mod as a dialog (460×280 with `action: "new"`, 560×480 with
   `action: "open"`, props `{space, folder}`).
 - The page takes the keyboard when it opens (`focusable`).
+- Every second the page checks its space: once the space has more than one tab, it closes its own
+  tab (`tab.close`). It never closes itself while it's the last tab.
 - **Guard** (`props.guard: true`, one copy as a floating block in the layout, draws an empty `div()`):
-  on every render and every 1s (`cx.timer.every`), for each space it counts Welcome tabs (tabs with a
-  pane whose `mod` is `space-welcome`, from `panes()`) and real tabs (the rest).
-  - 1 real tab and no Welcome → `tab.new {space, name: "Welcome", mod: "space-welcome", props: {space}, focus: false}`.
-  - ≥2 real tabs → `tab.close {id, confirmed: true}` on each Welcome tab.
-  - More than one Welcome → close all but the first.
-  - Each action is remembered per space/tab id for 3s, so repeated passes don't repeat it, and a lost
-    command is retried after that.
-- Closing the last real tab therefore leaves the space on its Welcome tab. Closing the Welcome tab by
-  hand while it's the only tab is Herdr's own close, which asks before the space goes.
+  on every render it snapshots each space: name, `named`, machine, active, folder (the first terminal
+  pane's live `cwd` from `panes()`, else `space.folder`), its 1-based index within its machine's
+  block, and `lone` (exactly one tab, and that tab has no `space-welcome` pane). A space in the last
+  snapshot but not this one, that was `lone`, whose machine is `ready` in `machines()`, and whose
+  folder still exists (`exec("test", ["-d", folder], {on})`) is restored:
+  1. `exec("herdr-app", ["do", "space.new", JSON.stringify({name (only if named), folder, machine, focus: active})])`
+     → `{space, tab}`;
+  2. `tab.new {space, name: "Welcome", mod: "space-welcome", props: {space}, focus: active}`;
+  3. `tab.close {id: <the shell tab>, confirmed: true}`;
+  4. `space.move {id: space, index}`.
+- A space whose only tab was Welcome, or that had two or more tabs, stays closed.
 - Agent statuses aren't shown here; the page only starts things.
 
 ## Built from
@@ -55,23 +59,27 @@ top, scrolling if short of room. Text 13px.
   `{ "id": "welcome-guard", "content": { "mod": "space-welcome", "props": { "guard": true } }, "edge": "bottom", "align": "end" }`.
   Without the guard, nothing opens the page; `herdr-app do tab.new` with the page props still works.
 - `herdr` used: `theme`, `knownAgents({on: space.machine})`, `run`, `openOverlay`, `props`, `window`,
-  `keys`, `checking`, `spaces`, `panes`. Commands: `tab.new`, `tab.close`, `space.new`.
+  `keys`, `checking`, `spaces`, `panes`, `machines`, `exec`. Commands: `tab.new`, `tab.close`,
+  `space.new`, `space.move`.
 - Shipped things it uses: `icons/shell.svg`, the `worktree` mod.
-- Nothing reaches the network, runs programs or reads files.
+- Programs, only when restoring: `test -d` and `herdr-app do space.new`. No network, no file reads.
 
 ## Watch out
 
-- Herdr has no "tab closing" event, so the guard must act before the close: that's why the Welcome
-  tab sits next to a lone tab all the time.
-- A `tab.new` sent right after `space.new` can be lost and causes no new render: the 1s timer is what
-  retries it.
-- A tab created with `focus: false` doesn't start its mod copy until shown, so all opening and closing
-  lives in the guard, not in the page.
+- Herdr has no "tab closing" event and closing a space's last tab closes the space, so the guard can
+  only bring it back after: a new space id and a short flicker.
+- `space.close` on a one-tab space looks the same as closing its last tab, so it comes back too;
+  closing its Welcome tab removes it for good.
+- `run()` returns nothing: use `herdr-app do space.new` through `exec` to learn the new ids.
+- Open the Welcome tab before closing the shell tab, or the space closes again.
+- Skip spaces of machines that aren't `ready` (they vanish when a machine goes offline) and spaces
+  whose folder is gone (a removed worktree).
+- The first snapshot after a (re)load restores nothing.
 - The page must not take focus in the guard role (`init` returns early).
 - `props.space` is required; without it the page shows "This space" and its worktree rows are disabled.
 - The guard finds Welcome tabs through `panes()` (`p.mod === "space-welcome"`), so a renamed copy of
   the mod must change that name too.
-- Skip the guard's commands under `checking()`.
+- Skip the page loop and the guard under `checking()`.
 - Agent keys are 1–9 only, counted over installed agents.
 
 ## Done when
@@ -79,6 +87,8 @@ top, scrolling if short of room. Text 13px.
 - `herdr-app check ~/.config/herdr-app/mods/space-welcome` passes.
 - `herdr-app do tab.new '{"space":"<id>","name":"Welcome","mod":"space-welcome","props":{"space":"<id>"}}'`
   shows the page with the space's name, folder and installed agents numbered from 1.
-- With the guard in the layout: a new space (one tab) gets one Welcome tab within a second or two.
-- Open a second tab → Welcome goes; close it → Welcome comes back.
-- Close the space's last real tab → the space stays, showing Welcome.
+- With the guard in the layout: close the only tab of a space → within a second the space is back
+  in the same place with only Welcome.
+- Close that Welcome tab → the space goes for good.
+- A space with two tabs closed with `space.close`, or one whose folder was deleted → stays closed.
+- Pressing `1` on the page starts the first agent in a new tab, and within about a second Welcome is gone.

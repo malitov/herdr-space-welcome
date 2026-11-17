@@ -9,8 +9,8 @@ A welcome page for a [Herdr](https://herdr.dev) space that has no open tabs. Whe
 - The page shows the name and the folder of the space.
 - Click a row to open a terminal, start an installed agent, make a new space, or make a worktree.
 - Press 1 to 9 to start the installed agent with that number.
-- A space does not close when you close its last tab. It shows the welcome page instead.
-- When the space has two tabs again, the page closes.
+- When you close the last tab of a space, the space comes back at once with only the welcome page in it.
+- When the space gets another tab, the page closes.
 
 ## Install
 
@@ -18,15 +18,16 @@ A welcome page for a [Herdr](https://herdr.dev) space that has no open tabs. Whe
 2. Add the guard to your layout (see below).
 3. Run `herdr-app check ~/.config/herdr-app/mods/space-welcome`.
 
-The mod does not run programs, does not read files, and does not connect to the network.
+The guard runs two programs when it brings a space back: `test -d <folder>` (on the space's machine) and `herdr-app do space.new`. The mod does not read files and does not connect to the network.
 
 ## How the page opens
 
-Herdr has no event for "a tab is closing", so the mod acts ahead with a guard: one copy of the mod in your layout that draws nothing.
+Herdr has no event for "a tab is closing", and closing the last tab of a space closes the space. So the mod brings the space back right after, with a guard: one copy of the mod in your layout that draws nothing.
 
-- When a space is left with one tab, the guard adds a Welcome tab next to it, in the background. When you close that last tab, the space stays and shows the welcome page.
-- When the space has two tabs again, the guard closes the Welcome tab.
-- So a space with one tab always shows a second tab, "Welcome".
+- The guard remembers every space. If a space disappears and its only tab was not the welcome page, the guard makes the space again with the same name, folder, machine and place in the list, with only the welcome page in it.
+- If the closed tab was the welcome page itself, the space stays closed. Close the welcome page to really close a space.
+- A space closed with two or more tabs, a space whose folder is gone (a removed worktree) and spaces of a machine that went offline do not come back.
+- Things to know: the space comes back as a new space (a new id) after a short flicker. A space with one tab that you close with "Close space" also comes back; close its welcome page to remove it.
 
 Add the guard to the root node of your layout file (`~/.config/herdr-app/layouts/<name>.json`). Herdr's shipped layouts are read-only, so clone one first (`herdr-app do layout.clone '{"name":"main","as":"my-layout"}'`).
 
