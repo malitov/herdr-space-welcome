@@ -34,7 +34,8 @@ Herdr has no event for "a tab is closing", and closing the last tab of a space c
 **2. Other closes (fallback).** The × on a tab, a menu, or a shell that exits close the space before the mod can act. The guard then makes the space again with the same name, folder, machine and place in the list, with only the welcome page in it.
 
 - The space comes back as a new space (a new id). Another space shows for a moment first.
-- A space with one tab that you close with "Close space" also comes back. Close its welcome page to remove it.
+- A space with one tab that you close with "Close space" also comes back, because Herdr shows both closes the same way. Close its welcome page to remove it.
+- To keep such a space closed, the menu that closes it sets shared `space.closing` to `{id, at: Date.now()}` just before `space.close`. The guard then leaves that space closed (the mark counts for 2 minutes).
 - A space closed with two or more tabs, a space whose folder is gone (a removed worktree) and spaces of a machine that went offline do not come back.
 
 Add the guard to the root node of your layout file (`~/.config/herdr-app/layouts/<name>.json`). Herdr's shipped layouts are read-only, so clone one first (`herdr-app do layout.clone '{"name":"main","as":"my-layout"}'`).

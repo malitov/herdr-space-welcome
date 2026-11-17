@@ -8,7 +8,7 @@
 //   2. for closes that don't come from the key, brings the space back right after, with this page.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, knownAgents, run, openOverlay, props, window, keys, checking, spaces, panes, machines, exec, nextCommand } from "herdr";
+import { shared, setShared, theme, knownAgents, run, openOverlay, props, window, keys, checking, spaces, panes, machines, exec, nextCommand } from "herdr";
 
 // A global key bound to `name`, drawn the platform's way (⌘T on macOS, Ctrl+T elsewhere).
 function shortcut(name) {
@@ -62,6 +62,9 @@ function guard(prev) {
   const layout = new Map(machines().map(m => [m.name ?? "", m.layout]));
   for (const [id, s] of prev) {
     if (now.has(id) || !s.lone || !s.folder || (layout.get(s.machine) ?? "ready") !== "ready") continue;
+    // Closed on purpose ("Close" in a space's menu sets shared "space.closing" {id, at}): it stays closed.
+    const closing = shared("space.closing");
+    if (closing?.id === id && Date.now() - closing.at < 120000) { setShared("space.closing", null); continue; }
     restore(s).catch(() => {});
   }
   return now;

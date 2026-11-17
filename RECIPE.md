@@ -85,6 +85,9 @@ top, scrolling if short of room. Text 13px.
 - Fallback: build the space with `focus: false` and select it last, or the shell tab flashes.
 - `space.close` on a one-tab space looks the same as closing its last tab, so it comes back too;
   closing its Welcome tab removes it for good.
+- A deliberate close stays closed: when shared `space.closing` is `{id, at}` for the vanished space and
+  `at` is under 2 minutes old, the guard skips the restore and clears the key. A space menu sets it
+  just before `space.close` (one line: `setShared("space.closing", { id, at: Date.now() })`).
 - `run()` returns nothing: use `herdr-app do space.new` through `exec` to learn the new ids.
 - Open the Welcome tab before closing the shell tab, or the space closes again.
 - Skip spaces of machines that aren't `ready` (they vanish when a machine goes offline). A space
