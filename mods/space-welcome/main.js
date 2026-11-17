@@ -2,12 +2,13 @@
 // a new space, a worktree. It closes itself once its space has another tab.
 // Two roles, by props:
 // - {space}: the page.
-// - {guard: true}: one copy in the layout (a floating block that draws nothing). Herdr has no
-//   "tab closing" event and closing a space's last tab closes the space, so the guard brings the
-//   space back right after, with only this page in it.
+// - {guard: true, close?}: one copy in the layout (a floating block that draws nothing). Herdr has
+//   no "tab closing" event and closing a space's last tab closes the space, so the guard:
+//   1. takes the close key ("space-welcome.close") and swaps a space's last tab for this page;
+//   2. for closes that don't come from the key, brings the space back right after, with this page.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, knownAgents, run, openOverlay, props, window, keys, checking, spaces, panes, machines, exec } from "herdr";
+import { theme, knownAgents, run, openOverlay, props, window, keys, checking, spaces, panes, machines, exec, nextCommand } from "herdr";
 
 // A global key bound to `name`, drawn the platform's way (⌘T on macOS, Ctrl+T elsewhere).
 function shortcut(name) {
@@ -63,21 +64,41 @@ function guard(state) {
   }
 }
 async function restore(s) {
-  const on = s.machine || null;
-  // A removed worktree takes its folder: that space stays closed.
-  if ((await exec("test", ["-d", s.folder], { on })).code !== 0) return;
-  // herdr-app do, not run(): it answers with the new space's and its shell tab's ids.
-  const r = await exec("herdr-app", ["do", "space.new", JSON.stringify({ ...(s.named ? { name: s.name } : {}), folder: s.folder, machine: s.machine, focus: s.active })]);
+  // herdr-app do, not run(): it answers with the new space's and its shell tab's ids. It fails when
+  // the folder is gone (a removed worktree), so that space stays closed.
+  // Built in the background and shown only when ready, so the shell tab is never seen.
+  const r = await exec("herdr-app", ["do", "space.new", JSON.stringify({ ...(s.named ? { name: s.name } : {}), folder: s.folder, machine: s.machine, focus: false })]);
   const made = JSON.parse(r.stdout || "{}");
   if (!made.space) return;
-  run("tab.new", { space: made.space, name: "Welcome", mod: "space-welcome", props: { space: made.space }, focus: s.active });
+  run("tab.new", { space: made.space, name: "Welcome", mod: "space-welcome", props: { space: made.space }, focus: false });
   run("tab.close", { id: made.tab, confirmed: true });
   run("space.move", { id: made.space, index: s.index });
+  if (s.active) run("space.select", { id: made.space });
+}
+
+// The key path (bind the close key to "space-welcome.close"): no flicker, the space never closes.
+// The close itself is always the command in the guard's `close` prop (default tab.close), e.g.
+// another tab bar's own close, so its rules (a pinned tab) still hold. Before a space's last real
+// tab, Welcome is put behind it first: the close then leaves the space on Welcome.
+async function closeShown(cx) {
+  const close = props()?.close ?? "tab.close";
+  const space = spaces().find(s => s.active), tab = space?.tabs.find(t => t.active);
+  if (!tab || space.tabs.length !== 1 || welcomeTabs().has(tab.id)) return run(close);
+  run("tab.new", { space: space.id, name: "Welcome", mod: "space-welcome", props: { space: space.id }, focus: false });
+  run(close);
+  // The close was refused (pinned, a dialog): take the unused Welcome back.
+  await cx.sleep(400);
+  const now = spaces().find(s => s.id === space.id), welcome = welcomeTabs();
+  if (now?.tabs.some(t => t.id === tab.id)) for (const t of now.tabs) if (welcome.has(t.id)) run("tab.close", { id: t.id, confirmed: true });
 }
 
 export default class Welcome extends View {
   init(_props, cx) {
-    if (props()?.guard) { this.state = {}; return; }
+    if (props()?.guard) {
+      this.state = {};
+      if (!checking()) cx.spawn(async (cx) => { for (;;) if (await nextCommand() === "close") await closeShown(cx); });
+      return;
+    }
     this.agents = [];
     this.handle = cx.focus_handle();
     this.handle.focus();
