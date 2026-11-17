@@ -1,5 +1,5 @@
 // A space's welcome page: a tab whose only pane is this mod. Rows: a terminal, each agent (keys 1-9),
-// a new space, a worktree. It closes itself once its space has another tab.
+// a new space, a worktree. The guard closes it once its space has another tab.
 // Two roles, by props:
 // - {space}: the page.
 // - {guard: true, close?}: one copy in the layout (a floating block that draws nothing). Herdr has
@@ -32,9 +32,7 @@ const spaceOf = () => spaces().find(s => s.id === props()?.space) ?? null;
 // The installed agents (keys 1 to 9, in order), then at most two that aren't.
 const choices = (agents) => [...agents.filter(a => a.installed), ...agents.filter(a => !a.installed).slice(0, 2)];
 
-// The guard. Each render it remembers every space; when one is gone that had exactly one tab, and that
-// tab wasn't a Welcome tab, its last tab was closed: it makes the space again with only Welcome.
-// A space whose only tab was Welcome goes for good, and so does one closed with two or more tabs.
+// Fallback: a space gone whose only tab wasn't Welcome lost its last tab, so it's made again.
 const welcomeTabs = () => new Set(panes().filter(p => p.mod === "space-welcome").map(p => p.tab));
 function snapshot() {
   const all = spaces(), welcome = welcomeTabs(), map = new Map();
@@ -48,20 +46,25 @@ function snapshot() {
       // space.move counts from 1, within its machine's block.
       index: all.filter(x => (x.machine ?? "") === machine).indexOf(s) + 1,
       lone: s.tabs.length === 1 && !welcome.has(s.tabs[0].id),
+      // Welcome tabs to close: the space has another tab, so the page has done its job.
+      done: s.tabs.length > 1 && !busy.has(s.id) ? s.tabs.filter(t => welcome.has(t.id)).map(t => t.id) : [],
     });
   }
   return map;
 }
-function guard(state) {
-  const prev = state.prev, now = snapshot();
-  state.prev = now;
-  if (!prev) return;
+// Spaces closeShown is working on: Welcome sits beside the last tab there for a moment, on purpose.
+const busy = new Set();
+function guard(prev) {
+  const now = snapshot();
+  for (const s of now.values()) for (const id of s.done) run("tab.close", { id });
+  if (!prev) return now;
   // A machine that is loading or offline drops its spaces without anyone closing them.
   const layout = new Map(machines().map(m => [m.name ?? "", m.layout]));
   for (const [id, s] of prev) {
     if (now.has(id) || !s.lone || !s.folder || (layout.get(s.machine) ?? "ready") !== "ready") continue;
     restore(s).catch(() => {});
   }
+  return now;
 }
 async function restore(s) {
   // herdr-app do, not run(): it answers with the new space's and its shell tab's ids. It fails when
@@ -76,18 +79,17 @@ async function restore(s) {
   if (s.active) run("space.select", { id: made.space });
 }
 
-// The key path (bind the close key to "space-welcome.close"): no flicker, the space never closes.
-// The close itself is always the command in the guard's `close` prop (default tab.close), e.g.
-// another tab bar's own close, so its rules (a pinned tab) still hold. Before a space's last real
-// tab, Welcome is put behind it first: the close then leaves the space on Welcome.
+// Key path ("space-welcome.close"): Welcome goes behind the last tab, then the `close` prop's command.
 async function closeShown(cx) {
   const close = props()?.close ?? "tab.close";
   const space = spaces().find(s => s.active), tab = space?.tabs.find(t => t.active);
   if (!tab || space.tabs.length !== 1 || welcomeTabs().has(tab.id)) return run(close);
+  busy.add(space.id);
   run("tab.new", { space: space.id, name: "Welcome", mod: "space-welcome", props: { space: space.id }, focus: false });
   run(close);
   // The close was refused (pinned, a dialog): take the unused Welcome back.
   await cx.sleep(400);
+  busy.delete(space.id);
   const now = spaces().find(s => s.id === space.id), welcome = welcomeTabs();
   if (now?.tabs.some(t => t.id === tab.id)) for (const t of now.tabs) if (welcome.has(t.id)) run("tab.close", { id: t.id, confirmed: true });
 }
@@ -95,7 +97,6 @@ async function closeShown(cx) {
 export default class Welcome extends View {
   init(_props, cx) {
     if (props()?.guard) {
-      this.state = {};
       if (!checking()) cx.spawn(async (cx) => { for (;;) if (await nextCommand() === "close") await closeShown(cx); });
       return;
     }
@@ -106,20 +107,6 @@ export default class Welcome extends View {
       try { this.agents = await knownAgents({ on: spaceOf()?.machine ?? null }); }
       catch { this.failed = true; }
       cx.notify();
-    });
-    if (checking()) return;
-    // Once the space has another tab (a row here, + or a key), this page has done its job: it goes.
-    // Never while it's the last tab: that would close the space. A loop, not render: a hidden tab
-    // (the new one is shown) doesn't render.
-    cx.spawn(async cx => {
-      for (;;) {
-        await cx.sleep(1000);
-        const space = spaceOf();
-        if (!space) return;
-        const mine = new Set(space.tabs.map(t => t.id));
-        const me = panes().find(p => p.mod === "space-welcome" && mine.has(p.tab));
-        if (me && space.tabs.length > 1) { run("tab.close", { id: me.tab }); return; }
-      }
     });
   }
   row(id, icon, name, action, hint = "", enabled = true) {
@@ -133,7 +120,7 @@ export default class Welcome extends View {
   render() {
     // Renders again whenever spaces or panes change: the guard needs no timer.
     if (props()?.guard) {
-      if (!checking()) guard(this.state);
+      if (!checking()) this.prev = guard(this.prev);
       return div();
     }
     const t = theme();

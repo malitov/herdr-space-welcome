@@ -35,8 +35,6 @@ top, scrolling if short of room. Text 13px.
   Herdr's shipped `worktree` mod as a dialog (460×280 with `action: "new"`, 560×480 with
   `action: "open"`, props `{space, folder}`).
 - The page takes the keyboard when it opens (`focusable`).
-- Every second the page checks its space: once the space has more than one tab, it closes its own
-  tab (`tab.close`). It never closes itself while it's the last tab.
 - **Guard** (`props.guard: true`, one copy as a floating block in the layout, draws an empty `div()`).
 - Guard, key path (`nextCommand()` gives `"close"`; key `space-welcome.close`): `close` = the guard's
   `close` prop, default `tab.close`. If the shown space's shown tab is its only tab and not Welcome:
@@ -44,6 +42,9 @@ top, scrolling if short of room. Text 13px.
   `run(close)`; 400ms later, if that tab is still there (the close was refused: a pinned tab, a
   dialog), close the Welcome tabs of that space again. Otherwise just `run(close)`. The space never
   closes and Herdr doesn't ask.
+- Guard, self-close: on every render, in a space with more than one tab, each Welcome tab is closed
+  (`tab.close {id}`), even in a space that isn't shown. Skipped for a space the key path is working on
+  (a `busy` set), where Welcome sits beside the last tab for a moment on purpose.
 - Guard, fallback: on every render it snapshots each space: name, `named`, machine, active, folder (the first terminal
   pane's live `cwd` from `panes()`, else `space.folder`), its 1-based index within its machine's
   block, and `lone` (exactly one tab, and that tab has no `space-welcome` pane). A space in the last
@@ -90,10 +91,14 @@ top, scrolling if short of room. Text 13px.
   whose folder is gone (a removed worktree) isn't restored because `space.new` fails there.
 - The first snapshot after a (re)load restores nothing.
 - The page must not take focus in the guard role (`init` returns early).
+- The page doesn't close itself: the guard does it. A page opened by hand in a layout without the
+  guard stays until closed.
+- The key path must mark its space `busy`, or the self-close removes the Welcome tab it just put
+  behind the last tab, and the space closes.
 - `props.space` is required; without it the page shows "This space" and its worktree rows are disabled.
 - The guard finds Welcome tabs through `panes()` (`p.mod === "space-welcome"`), so a renamed copy of
   the mod must change that name too.
-- Skip the page loop and the guard under `checking()`.
+- Skip the guard under `checking()`.
 - Agent keys are 1–9 only, counted over installed agents.
 
 ## Done when
